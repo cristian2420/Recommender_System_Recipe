@@ -305,7 +305,14 @@ plt.ylabel('Score')
 plt.xlabel('Models')
 plt.xticks(range(len(metrics_to_plot)), metrics_to_plot)
 plt.show()
-
+####
+for metric in metrics_to_plot:
+    plt.figure(figsize=(10, 6))
+    plt.bar(comparison_df.index, comparison_df[metric], color='skyblue')
+    plt.title(f'{metric} Comparison')
+    plt.xlabel('Model')
+    plt.ylabel(metric)
+    plt.show()
 # Plotting MSE and RMSE
 plt.figure(figsize=(12, 6))
 error_metrics_to_plot = ['MSE', 'RMSE']
