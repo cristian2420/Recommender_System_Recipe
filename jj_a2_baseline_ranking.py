@@ -4,100 +4,81 @@ import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
 from sklearn import metrics
+from sklearn.metrics import mean_squared_error, confusion_matrix, precision_score, recall_score, f1_score, accuracy_score
 
-## Make sure to pip install surprise
+### Don't forget to pip install surprise
 
+### JJ Baseline (adding RMSE and MAE)
+
+# Load the data
 traindata = pd.read_csv('archive/interactions_train.csv')
-traindata.head()
+testdata = pd.read_csv('archive/interactions_test.csv')
 
-##baseline
+# Baseline: Average Ratings
 allRatings = []
 userRatings = defaultdict(list)
 recipeRatings = defaultdict(list)
+
 for i in range(len(traindata)):
     allRatings.append(traindata['rating'][i])
     userRatings[traindata['user_id'][i]].append(traindata['rating'][i])
     recipeRatings[traindata['recipe_id'][i]].append(traindata['rating'][i])
 
 globalAverage = sum(allRatings) / len(allRatings)
-## user average
-userAverage = {}
-for u in userRatings:
-  userAverage[u] = sum(userRatings[u]) / len(userRatings[u])
+userAverage = {u: sum(ratings) / len(ratings) for u, ratings in userRatings.items()}
+recipeAverage = {r: sum(ratings) / len(ratings) for r, ratings in recipeRatings.items()}
 
-## recipe average
-recipeAverage = {}
-for r in recipeRatings:
-  recipeAverage[r] = sum(recipeRatings[r]) / len(recipeRatings[r])
-
-# plotting distribtuions of ratings in same plot for comparison with title
-sns.distplot(allRatings, hist=False, rug=True, label='all ratings')
-sns.distplot(list(userAverage.values()), hist=False, rug=True, label='user average ratings')
-sns.distplot(list(recipeAverage.values()), hist=False, rug=True, label='recipe average ratings')
-plt.legend()
-plt.title('Distribution of ratings')
-plt.xlabel('Rating')
-plt.ylabel('Density')
-plt.show()
-
-## Applying baseline to test data
-testdata = pd.read_csv('archive/interactions_test.csv')
-testdata.head()
-
-baselineType = {'user': 0, 'recipe': 0, 'global': 0, 'hybrid': 0}
+# Apply baseline to test data
 predictions = []
 for i in range(len(testdata)):
     user = testdata['user_id'][i]
     recipe = testdata['recipe_id'][i]
     if user in userAverage and recipe in recipeAverage:
         predictions.append((userAverage[user] + recipeAverage[recipe]) / 2)
-        baselineType['hybrid'] += 1
     elif user in userAverage:
         predictions.append(userAverage[user])
-        baselineType['user'] += 1
     elif recipe in recipeAverage:
         predictions.append(recipeAverage[recipe])
-        baselineType['recipe'] += 1
     else:
         predictions.append(globalAverage)
-        baselineType['global'] += 1
 
+# Add predictions to the test data
 testdata['prediction'] = predictions
-testdata.head()
 
-baselineType
+# Calculate RMSE for Baseline
+mse_baseline = mean_squared_error(testdata['rating'], testdata['prediction'])
+rmse_baseline = np.sqrt(mse_baseline)
 
-## Calculating metrics (accuracy, TP, FP, TN, FN, precision, recall, F1, MSE, MAE)
-def metrics(pred, label):
-    TP = [a and b for (a,b) in zip(pred,label)]
-    TN = [not a and not b for (a,b) in zip(pred,label)]
-    FP = [a and not b for (a,b) in zip(pred,label)]
-    FN = [not a and b for (a,b) in zip(pred,label)]
+# Define a function to calculate metrics
+def calculate_metrics(test_labels, predictions):
+    metrics = {}
+    metrics['MSE'] = mean_squared_error(test_labels, predictions)
+    metrics['RMSE'] = np.sqrt(metrics['MSE'])
+    metrics['MAE'] = mean_absolute_error(test_labels, predictions)
 
-    TP = sum(TP)
-    TN = sum(TN)
-    FP = sum(FP)
-    FN = sum(FN)
-    BER = 0.5 * (FP / (TN + FP) + FN / (FN + TP))
-    accuracy = (TP +TN) / (TP + TN + FP + FN)
-    precision = TP / (TP + FP)
-    recall = TP / (TP + FN)
-    F1 = 2 * (precision * recall) / (precision + recall)
-    MSE = sum([(a - b) ** 2 for (a,b) in zip(pred,label)]) / len(pred)
-    MAE = sum([abs(a - b) for (a,b) in zip(pred,label)]) / len(pred)
+    # Binarize predictions and actual ratings for classification metrics
+    binary_actuals = (test_labels >= 4)
+    binary_preds = (np.array(predictions) >= 4)
+    tn, fp, fn, tp = confusion_matrix(binary_actuals, binary_preds).ravel()
 
-    outDict = {'TP': TP, 'TN': TN, 'FP': FP, 'FN': FN, 'BER': BER, 'accuracy': accuracy, 'precision': precision, 'recall': recall, 'F1': F1, 'MSE': MSE, 'MAE': MAE}
-    return outDict
+    # Classification metrics
+    metrics['accuracy'] = accuracy_score(binary_actuals, binary_preds)
+    metrics['precision'] = precision_score(binary_actuals, binary_preds)
+    metrics['recall'] = recall_score(binary_actuals, binary_preds)
+    metrics['F1'] = f1_score(binary_actuals, binary_preds)
+    metrics['BER'] = 0.5 * (fp / (fp + tn) + fn / (tp + fn))
+    metrics['TP'] = tp
+    metrics['TN'] = tn
+    metrics['FP'] = fp
+    metrics['FN'] = fn
 
-GeneralMetrics = metrics(predictions, list(testdata['rating']))
-GeneralMetrics
+    return metrics
 
-### Round predictions to avoid non-integer ratings
-predictions_round = [round(x) for x in predictions]
-RoundMetrics = metrics(predictions_round,list(testdata['rating']))
-RoundMetrics
+# Calculate baseline metrics
+baseline_metrics = calculate_metrics(testdata['rating'], predictions)
 
-### JJ's CODE
+# Print baseline metrics
+print(baseline_metrics)
 
 ### SVD ###
 
@@ -202,6 +183,8 @@ from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error, confusion_matrix, precision_score, recall_score, f1_score
 from sklearn.metrics import mean_absolute_error
 
+# Assuming train_data and test_data are already loaded and preprocessed
+
 # Prepare the features and target
 X_train = train_data[['user_avg_rating', 'recipe_avg_rating']]
 y_train = train_data['rating']
@@ -248,8 +231,8 @@ lr_results = {
     'recall': 0.8888675069758492,
     'F1': 0.873280710875833,
     'MSE': 1.7641518852867912,
-    'MAE': mae_lr,  
-    'RMSE': rmse_lr  
+    'MAE': mae_lr,  # Added MAE
+    'RMSE': rmse_lr  # Added RMSE
 }
 
 print(lr_results)
@@ -304,23 +287,8 @@ print(results_rf)
 
 import pandas as pd
 
-# Baseline, Linear Regression (lr_results), SVD (results), and Random Forest (results_rf) results
-baseline_results = {
-    'TP': 52364.0,
-    'TN': 39,
-    'FP': 648,
-    'FN': 110.0,
-    'BER': 0.47266385864956534,
-    'accuracy': 0.9857414269859484,
-    'precision': 0.9877763525239568,
-    'recall': 0.9979037237489042,
-    'F1': 0.9928142123125343,
-    'MSE': 1.9340826977117624,
-    'MAE': 0.8053793657165796
-}
-
 # Replace 'lr_results', 'results', and 'results_rf' with the actual dictionaries from your code
-comparison_df = pd.DataFrame([baseline_results, lr_results, results, results_rf],
+comparison_df = pd.DataFrame([baseline_metrics, lr_results, results, results_rf],
                              index=["Baseline", "Linear Regression", "SVD", "Random Forest"])
 
 # Print the DataFrame
@@ -328,8 +296,6 @@ print(comparison_df)
 
 import matplotlib.pyplot as plt
 import seaborn as sns
-
-# Assuming 'comparison_df' is the DataFrame with all the results
 
 # Set the style for seaborn
 sns.set(style="whitegrid")
@@ -363,3 +329,4 @@ plt.ylabel('Score')
 plt.xlabel('Models')
 plt.xticks(range(len(ber_acc_to_plot)), ber_acc_to_plot)
 plt.show()
+
