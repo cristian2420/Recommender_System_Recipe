@@ -8,21 +8,21 @@ from sklearn.metrics import mean_squared_error, confusion_matrix, precision_scor
 
 ### Don't forget to pip install surprise
 
-### JJ Baseline (adding RMSE and MAE)
+### JJ Baseline (adding RMSE)
 
 # Load the data
-traindata = pd.read_csv('archive/interactions_train.csv')
-testdata = pd.read_csv('archive/interactions_test.csv')
+train_data = pd.read_csv('archive/interactions_train.csv')
+test_data = pd.read_csv('archive/interactions_test.csv')
 
 # Baseline: Average Ratings
 allRatings = []
 userRatings = defaultdict(list)
 recipeRatings = defaultdict(list)
 
-for i in range(len(traindata)):
-    allRatings.append(traindata['rating'][i])
-    userRatings[traindata['user_id'][i]].append(traindata['rating'][i])
-    recipeRatings[traindata['recipe_id'][i]].append(traindata['rating'][i])
+for i in range(len(train_data)):
+    allRatings.append(train_data['rating'][i])
+    userRatings[train_data['user_id'][i]].append(train_data['rating'][i])
+    recipeRatings[train_data['recipe_id'][i]].append(train_data['rating'][i])
 
 globalAverage = sum(allRatings) / len(allRatings)
 userAverage = {u: sum(ratings) / len(ratings) for u, ratings in userRatings.items()}
@@ -30,9 +30,9 @@ recipeAverage = {r: sum(ratings) / len(ratings) for r, ratings in recipeRatings.
 
 # Apply baseline to test data
 predictions = []
-for i in range(len(testdata)):
-    user = testdata['user_id'][i]
-    recipe = testdata['recipe_id'][i]
+for i in range(len(test_data)):
+    user = test_data['user_id'][i]
+    recipe = test_data['recipe_id'][i]
     if user in userAverage and recipe in recipeAverage:
         predictions.append((userAverage[user] + recipeAverage[recipe]) / 2)
     elif user in userAverage:
@@ -43,10 +43,10 @@ for i in range(len(testdata)):
         predictions.append(globalAverage)
 
 # Add predictions to the test data
-testdata['prediction'] = predictions
+test_data['prediction'] = predictions
 
 # Calculate RMSE for Baseline
-mse_baseline = mean_squared_error(testdata['rating'], testdata['prediction'])
+mse_baseline = mean_squared_error(test_data['rating'], test_data['prediction'])
 rmse_baseline = np.sqrt(mse_baseline)
 
 # Define a function to calculate metrics
@@ -75,10 +75,12 @@ def calculate_metrics(test_labels, predictions):
     return metrics
 
 # Calculate baseline metrics
-baseline_metrics = calculate_metrics(testdata['rating'], predictions)
+baseline_metrics = calculate_metrics(test_data['rating'], predictions)
 
 # Print baseline metrics
 print(baseline_metrics)
+
+### JJ's CODE
 
 ### SVD ###
 
@@ -89,10 +91,6 @@ from scipy.sparse import csr_matrix
 from surprise import SVD, Dataset, Reader, accuracy
 from surprise.model_selection import cross_validate, train_test_split
 from sklearn.metrics import mean_squared_error, confusion_matrix, precision_score, recall_score, f1_score
-
-# Load the provided datasets
-train_data = pd.read_csv('archive/interactions_train.csv')
-test_data = pd.read_csv('archive/interactions_test.csv')
 
 # Ensure no missing values in critical columns
 train_data.dropna(subset=['user_id', 'recipe_id', 'rating'], inplace=True)
@@ -180,61 +178,59 @@ test_data['user_avg_rating'].fillna(global_avg_rating, inplace=True)
 test_data['recipe_avg_rating'].fillna(global_avg_rating, inplace=True)
 
 from sklearn.linear_model import LinearRegression
-from sklearn.metrics import mean_squared_error, confusion_matrix, precision_score, recall_score, f1_score
+from sklearn.metrics import mean_squared_error, confusion_matrix, precision_score, recall_score, f1_score, accuracy_score
 from sklearn.metrics import mean_absolute_error
 
 # Assuming train_data and test_data are already loaded and preprocessed
 
-# Prepare the features and target
+# Prepare the features and target for Linear Regression
 X_train = train_data[['user_avg_rating', 'recipe_avg_rating']]
 y_train = train_data['rating']
 X_test = test_data[['user_avg_rating', 'recipe_avg_rating']]
 y_test = test_data['rating']
 
-# Linear Regression Model
+# Train the Linear Regression model
 lin_reg = LinearRegression()
 lin_reg.fit(X_train, y_train)
 
-# Predictions
+# Make predictions on the test data
 predictions_lr = lin_reg.predict(X_test)
 
-# Calculate MSE from the predictions
+# Calculate MSE, MAE, and RMSE for Linear Regression
 mse_lr = mean_squared_error(y_test, predictions_lr)
+mae_lr = mean_absolute_error(y_test, predictions_lr)
+rmse_lr = np.sqrt(mse_lr)
 
-# Binarize predictions and actual ratings for classification metrics
+# Binarize the predictions and actual ratings for classification metrics
+# Assuming a rating of 4 or above is considered positive
 binary_actuals = (y_test >= 4)
 binary_preds = (predictions_lr >= 4)
-tn, fp, fn, tp = confusion_matrix(binary_actuals, binary_preds).ravel()
 
 # Calculate classification metrics
+tn, fp, fn, tp = confusion_matrix(binary_actuals, binary_preds).ravel()
 precision_lr = precision_score(binary_actuals, binary_preds)
 recall_lr = recall_score(binary_actuals, binary_preds)
 f1_lr = f1_score(binary_actuals, binary_preds)
+accuracy_lr = accuracy_score(binary_actuals, binary_preds)
 ber_lr = 0.5 * (fp / (fp + tn) + fn / (tp + fn))
-accuracy_lr = (tp + tn) / (tp + tn + fp + fn)
 
-# Calculate MAE for Linear Regression
-mae_lr = mean_absolute_error(y_test, predictions_lr)
-
-# You already have the MSE from earlier, so calculate RMSE using MSE
-rmse_lr = np.sqrt(mse_lr)
-
-# Now add the calculated MAE and RMSE to your LR results dictionary
+# Compile results into a dictionary
 lr_results = {
-    'TP': 9238,
-    'TN': 536,
-    'FP': 1526,
-    'FN': 1155,
-    'BER': 0.425595344475218,
-    'accuracy': 0.7847450822962666,
-    'precision': 0.8582311408398365,
-    'recall': 0.8888675069758492,
-    'F1': 0.873280710875833,
-    'MSE': 1.7641518852867912,
-    'MAE': mae_lr,  # Added MAE
-    'RMSE': rmse_lr  # Added RMSE
+    'TP': tp,
+    'TN': tn,
+    'FP': fp,
+    'FN': fn,
+    'BER': ber_lr,
+    'accuracy': accuracy_lr,
+    'precision': precision_lr,
+    'recall': recall_lr,
+    'F1': f1_lr,
+    'MSE': mse_lr,
+    'MAE': mae_lr,
+    'RMSE': rmse_lr
 }
 
+# Output the results
 print(lr_results)
 
 ### Random Forest Regressor ###
